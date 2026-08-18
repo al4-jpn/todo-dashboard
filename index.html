@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Todo 管理ダッシュボード</title>
+<style>
+  :root{
+    --bg:#f5f6f8;
+    --card:#ffffff;
+    --border:#e5e7eb;
+    --text:#1f2430;
+    --sub:#6b7280;
+    --accent:#4f6df5;
+    --urgent:#e0532c;
+    --urgent-bg:#fdecea;
+    --done:#9ca3af;
+    --green:#2f9e63;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    padding:24px 16px 100px;
+  }
+  .wrap{max-width:960px;margin:0 auto;}
+
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    flex-wrap:wrap;
+    gap:12px;
+    margin-bottom:20px;
+  }
+  header h1{font-size:22px;margin:0 0 4px;}
+  header p{margin:0;color:var(--sub);font-size:12px;}
+  .sync-info{font-size:11px;color:var(--sub);text-align:right;}
+  .sync-info button{
+    margin-left:6px;
+    border:1px solid var(--border);
+    background:#fff;
+    border-radius:8px;
+    padding:4px 10px;
+    font-size:11px;
+    cursor:pointer;
+    color:var(--text);
+  }
+
+  .config-banner{
+    background:#fff8e1;
+    border:1px solid #f3d98b;
+    border-radius:12px;
+    padding:12px 16px;
+    font-size:12.5px;
+    margin-bottom:18px;
+    line-height:1.6;
+    display:none;
+  }
+  .config-banner.show{display:block;}
+  .config-banner code{background:#fff;padding:1px 6px;border-radius:4px;}
+
+  .toolbar{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-bottom:20px;
+  }
+  .btn{
+    border:none;
+    border-radius:10px;
+    padding:9px 16px;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
+  .btn-ghost{background:transparent;color:var(--sub);border:1px dashed var(--border);}
+
+  .tag-filter{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+    align-items:center;
+    margin-bottom:18px;
+  }
+  .tag-filter .label{font-size:12px;color:var(--sub);margin-right:4px;}
+  .tag-chip{
+    font-size:11.5px;
+    padding:4px 11px;
+    border-radius:999px;
+    background:#eef0ff;
+    color:var(--accent);
+    border:1px solid transparent;
+    cursor:pointer;
+    font-weight:600;
+  }
+  .tag-chip.active{background:var(--accent);color:#fff;}
+
+  .summary{display:flex;gap:12px;margin-bottom:22px;flex-wrap:wrap;}
+  .stat{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:10px 16px;
+    min-width:90px;
+    text-align:center;
+  }
+  .stat .num{font-size:20px;font-weight:700;}
+  .stat .label{font-size:10.5px;color:var(--sub);margin-top:2px;}
+
+  .category{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:14px;
+    margin-bottom:16px;
+    overflow:hidden;
+  }
+  .category-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:12px 16px;
+    background:#fafbfc;
+    border-bottom:1px solid var(--border);
+    border-left:5px solid var(--cat-color, var(--accent));
+  }
+  .category-header .left{display:flex;align-items:center;gap:8px;cursor:pointer;}
+  .category-header h2{font-size:14px;margin:0;}
+  .category-header .count{font-size:11.5px;color:var(--sub);font-weight:400;margin-left:6px;}
+  .chevron{transition:transform .2s ease;color:var(--sub);font-size:11px;}
+  .category.collapsed .chevron{transform:rotate(-90deg);}
+  .category.collapsed .items{display:none;}
+  .cat-actions{display:flex;gap:4px;}
+  .icon-btn{
+    border:none;background:transparent;color:var(--sub);
+    cursor:pointer;font-size:13px;padding:4px 6px;border-radius:6px;
+  }
+  .icon-btn:hover{background:#eee;}
+
+  .items{padding:6px 8px;min-height:8px;}
+  .item{
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    padding:9px 10px;
+    border-radius:10px;
+    transition:background .15s ease;
+    cursor:grab;
+  }
+  .item.dragging{opacity:0.4;}
+  .item:hover{background:#f5f6fa;}
+  .item input[type="checkbox"]{
+    margin-top:2px;width:17px;height:17px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;
+  }
+  .item-body{flex:1;min-width:0;}
+  .item-text{font-size:14px;line-height:1.5;word-break:break-word;}
+  .item.done .item-text{color:var(--done);text-decoration:line-through;}
+  .item-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;}
+  .badge{
+    font-size:10px;padding:2px 8px;border-radius:999px;font-weight:600;white-space:nowrap;
+  }
+  .badge.urgent{background:var(--urgent-bg);color:var(--urgent);}
+  .badge.tag{background:#eef0ff;color:var(--accent);}
+  .item-updated{font-size:10px;color:#c2c7d0;margin-top:3px;}
+  .item-updated.stale{color:var(--urgent);font-weight:600;}
+  .item-actions{display:flex;gap:2px;opacity:0;transition:opacity .15s;}
+  .item:hover .item-actions{opacity:1;}
+  .drop-indicator{height:2px;background:var(--accent);margin:2px 10px;border-radius:2px;}
+
+  .empty-hint{padding:14px 10px;color:var(--sub);font-size:12.5px;}
+
+  footer{text-align:center;color:var(--sub);font-size:11.5px;margin-top:24px;}
+
+  /* Modal */
+  .modal-overlay{
+    position:fixed;inset:0;background:rgba(0,0,0,.35);
+    display:none;align-items:center;justify-content:center;padding:16px;z-index:50;
+  }
+  .modal-overlay.show{display:flex;}
+  .modal{
+    background:#fff;border-radius:16px;padding:22px;max-width:420px;width:100%;
+  }
+  .modal h3{margin:0 0 14px;font-size:16px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:12px;color:var(--sub);margin-bottom:5px;font-weight:600;}
+  .field input[type="text"], .field select{
+    width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:13.5px;
+    font-family:inherit;
+  }
+  .tag-input-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;border:1px solid var(--border);
+    border-radius:8px;padding:6px;}
+  .tag-input-row input{border:none;outline:none;flex:1;min-width:80px;font-size:13px;padding:4px;}
+  .tag-pill{
+    background:#eef0ff;color:var(--accent);font-size:11px;padding:3px 9px;border-radius:999px;
+    display:flex;align-items:center;gap:5px;font-weight:600;
+  }
+  .tag-pill button{border:none;background:transparent;cursor:pointer;color:var(--accent);font-size:11px;padding:0;}
+  .color-swatches{display:flex;gap:8px;margin-top:6px;}
+  .swatch{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent;}
+  .swatch.selected{border-color:#333;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>📋 Todo 管理ダッシュボード</h1>
+      <p id="dateLine"></p>
+    </div>
+    <div class="sync-info">
+      <div id="syncStatus">未接続</div>
+      <button class="btn-secondary" id="refreshBtn" style="margin-top:6px;">🔄 更新</button>
+      <button class="btn-secondary" id="configBtn">⚙️ API設定</button>
+    </div>
+  </header>
+
+  <div class="config-banner" id="configBanner">
+    まだGoogle Apps ScriptのウェブアプリURLが設定されていません。右上の「⚙️ API設定」からURLを貼り付けてください。<br>
+    URLはスプレッドシートに紐づく Apps Script を「ウェブアプリ」としてデプロイすると発行されます。設定するまではこの画面はデモ表示（保存されません）です。
+  </div>
+
+  <div class="toolbar">
+    <button class="btn btn-primary" id="addTaskBtn">＋ タスクを登録</button>
+    <button class="btn btn-secondary" id="addCategoryBtn">＋ カテゴリを追加</button>
+    <button class="btn btn-ghost" id="showDoneBtn">✓ 完了済みを表示</button>
+  </div>
+
+  <div class="tag-filter" id="tagFilter"></div>
+
+  <div class="summary">
+    <div class="stat"><div class="num" id="statTotal">0</div><div class="label">合計</div></div>
+    <div class="stat"><div class="num" id="statDone">0</div><div class="label">完了</div></div>
+    <div class="stat"><div class="num" id="statRemain">0</div><div class="label">未完了</div></div>
+    <div class="stat"><div class="num" id="statStale">0</div><div class="label">停滞(3日+)</div></div>
+  </div>
+
+  <div id="categories"></div>
+
+  <footer>ドラッグでタスクを並び替え・カテゴリ移動できます。データはGoogleスプレッドシートに同期されます。</footer>
+</div>
+
+<!-- タスク追加/編集モーダル -->
+<div class="modal-overlay" id="taskModalOverlay">
+  <div class="modal">
+    <h3 id="taskModalTitle">タスクを登録</h3>
+    <div class="field">
+      <label>内容</label>
+      <input type="text" id="taskTextInput" placeholder="例）NEO住所入力">
+    </div>
+    <div class="field">
+      <label>カテゴリ</label>
+      <select id="taskCategorySelect"></select>
+    </div>
+    <div class="field">
+      <label>タグ（Enterで追加）</label>
+      <div class="tag-input-row" id="tagInputRow">
+        <input type="text" id="tagInput" placeholder="タグを入力してEnter">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="taskModalCancel">キャンセル</button>
+      <button class="btn btn-primary" id="taskModalSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- カテゴリ追加/編集モーダル -->
+<div class="modal-overlay" id="catModalOverlay">
+  <div class="modal">
+    <h3 id="catModalTitle">カテゴリを追加</h3>
+    <div class="field">
+      <label>カテゴリ名</label>
+      <input type="text" id="catNameInput" placeholder="例）イベント準備">
+    </div>
+    <div class="field">
+      <label>カラー</label>
+      <div class="color-swatches" id="colorSwatches"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="catModalDelete" style="display:none;color:#e0532c;">削除</button>
+      <button class="btn btn-secondary" id="catModalCancel">キャンセル</button>
+      <button class="btn btn-primary" id="catModalSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- API設定モーダル -->
+<div class="modal-overlay" id="configModalOverlay">
+  <div class="modal">
+    <h3>Apps Script API URL設定</h3>
+    <div class="field">
+      <label>ウェブアプリURL</label>
+      <input type="text" id="webappUrlInput" placeholder="https://script.google.com/macros/s/xxxx/exec">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="configModalCancel">キャンセル</button>
+      <button class="btn btn-primary" id="configModalSave">保存して読み込み</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ 状態管理（メモリ上。ブラウザストレージは使わない） ============
+let WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbx6RUnhQUYWkrplq7BOcyL5jJUTsrds-iRrhtCjxbFqQygwLPI4tzVngy_yE0bstq_2uA/exec'; // Apps Script ウェブアプリURL（画面の「⚙️ API設定」から変更も可）
+const API_TOKEN = '91d772de2fafad9bf551e716c391bc78'; // Config シートの API_TOKEN と一致させる簡易認証トークン
+let state = { tasks: [], categories: [] };
+let collapsedCats = new Set();
+let activeTagFilters = new Set();
+let showDone = false;
+let editingTaskId = null; // null = 新規, id = 編集
+let editingCatId = null;
+let currentTags = [];
+let dragTaskId = null;
+
+const PALETTE = ['#4f6df5','#2f9e63','#e0532c','#9b59b6','#e0a92c','#16a3b6','#e05285','#607089'];
+
+const el = id => document.getElementById(id);
+
+function isDemoMode(){ return !WEBAPP_URL; }
+
+// ============ 初期表示 ============
+const dateLine = el('dateLine');
+dateLine.textContent = new Date().toLocaleDateString('ja-JP', { year:'numeric', month:'long', day:'numeric', weekday:'short' }) + " 時点";
+
+function seedDemoData(){
+  const now = new Date().toISOString();
+  state.categories = [
+    { id:'cat-office', name:'事務・経理関連', color:'#4f6df5', order:1 },
+    { id:'cat-ops', name:'運営・クラス関連', color:'#2f9e63', order:2 },
+    { id:'cat-creative', name:'制作関連', color:'#e0532c', order:3 },
+  ];
+  const mk = (text, categoryId, tags, order) => ({
+    id: 'demo-' + text, text, categoryId, tags: tags||[], done:false, order, createdAt: now, updatedAt: now, completedAt:null
+  });
+  state.tasks = [
+    mk('規約更新','cat-office',[],1),
+    mk('NEO住所入力','cat-office',[],2),
+    mk('フォームリストチェック','cat-office',[],3),
+    mk('百万灯請求','cat-office',[],4),
+    mk('百万灯収支報告','cat-office',[],5),
+    mk('若山様返金（Spirits・現金）','cat-office',['返金','急ぎ'],6),
+    mk('佐々木様返金（若葉・退会済み・振り込み）','cat-office',['返金','急ぎ'],7),
+    mk('新クラス登録のタスク','cat-ops',[],1),
+    mk('発表会スケジュール打ち合わせ','cat-ops',[],2),
+    mk('MyWay作品制作','cat-creative',[],1),
+    mk('Feiifoaアパレルページ作成','cat-creative',[],2),
+  ];
+}
+
+// ============ API通信 ============
+async function apiGet(action){
+  const res = await fetch(WEBAPP_URL + '?action=' + action + '&token=' + encodeURIComponent(API_TOKEN));
+  return res.json();
+}
+async function apiPost(payload){
+  const res = await fetch(WEBAPP_URL, { method:'POST', body: JSON.stringify(Object.assign({ token: API_TOKEN }, payload)) });
+  return res.json();
+}
+
+async function loadAll(){
+  if (isDemoMode()){
+    el('configBanner').classList.add('show');
+    if (state.categories.length === 0) seedDemoData();
+    el('syncStatus').textContent = 'デモ表示中（未保存）';
+    render();
+    return;
+  }
+  el('configBanner').classList.remove('show');
+  el('syncStatus').textContent = '読み込み中...';
+  try{
+    const data = await apiGet('getAll');
+    if (data.error) throw new Error(data.error);
+    state.tasks = data.tasks;
+    state.categories = data.categories;
+    el('syncStatus').textContent = '同期済み ' + new Date().toLocaleTimeString('ja-JP');
+  }catch(err){
+    el('syncStatus').textContent = '同期エラー: ' + err.message;
+  }
+  render();
+}
+
+// ============ レンダリング ============
+function allTags(){
+  const set = new Set();
+  state.tasks.forEach(t => (t.tags||[]).forEach(tag => set.add(tag)));
+  return [...set];
+}
+
+function renderTagFilter(){
+  const wrap = el('tagFilter');
+  const tags = allTags();
+  if (tags.length === 0){ wrap.innerHTML=''; return; }
+  wrap.innerHTML = '<span class="label">タグで絞り込み:</span>' + tags.map(tag => {
+    const active = activeTagFilters.has(tag);
+    return `<span class="tag-chip ${active?'active':''}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</span>`;
+  }).join('');
+  wrap.querySelectorAll('.tag-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const tag = chip.dataset.tag;
+      if (activeTagFilters.has(tag)) activeTagFilters.delete(tag); else activeTagFilters.add(tag);
+      render();
+    });
+  });
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function isStale(task, days=3){
+  if (task.done) return false;
+  const updated = new Date(task.updatedAt);
+  if (isNaN(updated)) return false;
+  const diff = (Date.now() - updated.getTime()) / 86400000;
+  return diff >= days;
+}
+
+function staleDays(task){
+  const updated = new Date(task.updatedAt);
+  if (isNaN(updated)) return 0;
+  return Math.floor((Date.now() - updated.getTime()) / 86400000);
+}
+
+function render(){
+  renderTagFilter();
+  const container = el('categories');
+  container.innerHTML = '';
+
+  let total=0, done=0, stale=0;
+  const sortedCats = [...state.categories].sort((a,b)=>a.order-b.order);
+
+  sortedCats.forEach(cat => {
+    let items = state.tasks.filter(t => t.categoryId === cat.id);
+    items.forEach(t => { total++; if(t.done) done++; if(isStale(t)) stale++; });
+
+    if (activeTagFilters.size > 0){
+      items = items.filter(t => (t.tags||[]).some(tag => activeTagFilters.has(tag)));
+    }
+    if (!showDone) items = items.filter(t => !t.done);
+    items.sort((a,b)=>a.order-b.order);
+
+    const catEl = document.createElement('div');
+    catEl.className = 'category' + (collapsedCats.has(cat.id) ? ' collapsed' : '');
+    catEl.style.setProperty('--cat-color', cat.color || '#4f6df5');
+
+    const doneCount = state.tasks.filter(t=>t.categoryId===cat.id && t.done).length;
+    const totalCount = state.tasks.filter(t=>t.categoryId===cat.id).length;
+
+    const header = document.createElement('div');
+    header.className = 'category-header';
+    header.innerHTML = `
+      <div class="left">
+        <span class="chevron">▼</span>
+        <h2>${escapeHtml(cat.name)}<span class="count">(${doneCount}/${totalCount})</span></h2>
+      </div>
+      <div class="cat-actions">
+        <button class="icon-btn edit-cat" title="編集">✎</button>
+      </div>
+    `;
+    header.querySelector('.left').addEventListener('click', () => {
+      if (collapsedCats.has(cat.id)) collapsedCats.delete(cat.id); else collapsedCats.add(cat.id);
+      render();
+    });
+    header.querySelector('.edit-cat').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openCategoryModal(cat);
+    });
+
+    const itemsEl = document.createElement('div');
+    itemsEl.className = 'items';
+    itemsEl.dataset.categoryId = cat.id;
+
+    if (items.length === 0){
+      itemsEl.innerHTML = '<div class="empty-hint">タスクはありません</div>';
+    }
+
+    items.forEach(task => {
+      const row = document.createElement('div');
+      row.className = 'item' + (task.done ? ' done' : '');
+      row.draggable = true;
+      row.dataset.taskId = task.id;
+
+      const stale_ = isStale(task);
+      const tagsHtml = (task.tags||[]).map(tag => {
+        const cls = (tag === '急ぎ') ? 'badge urgent' : 'badge tag';
+        return `<span class="${cls}">${escapeHtml(tag)}</span>`;
+      }).join('');
+
+      row.innerHTML = `
+        <input type="checkbox" ${task.done?'checked':''}>
+        <div class="item-body">
+          <div class="item-text">${escapeHtml(task.text)}</div>
+          <div class="item-meta">${tagsHtml}</div>
+          <div class="item-updated ${stale_?'stale':''}">${task.done ? '完了済み' : (stale_ ? `⚠️ ${staleDays(task)}日更新なし` : '更新: ' + fmtDate(task.updatedAt))}</div>
+        </div>
+        <div class="item-actions">
+          <button class="icon-btn edit-task" title="編集">✎</button>
+        </div>
+      `;
+
+      row.querySelector('input[type=checkbox]').addEventListener('change', (ev) => {
+        toggleDone(task, ev.target.checked);
+      });
+      row.querySelector('.edit-task').addEventListener('click', () => openTaskModal(task));
+
+      // drag events
+      row.addEventListener('dragstart', () => {
+        dragTaskId = task.id;
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging');
+        dragTaskId = null;
+      });
+
+      itemsEl.appendChild(row);
+    });
+
+    itemsEl.addEventListener('dragover', (ev) => {
+      ev.preventDefault();
+      const dragging = itemsEl.querySelector('.dragging');
+      if (!dragging) return;
+      const after = getDragAfterElement(itemsEl, ev.clientY);
+      if (after == null) itemsEl.appendChild(dragging);
+      else itemsEl.insertBefore(dragging, after);
+    });
+    itemsEl.addEventListener('drop', () => {
+      if (!dragTaskId) return;
+      const ids = [...itemsEl.querySelectorAll('.item')].map(r => r.dataset.taskId);
+      handleDrop(dragTaskId, cat.id, ids);
+    });
+
+    catEl.appendChild(header);
+    catEl.appendChild(itemsEl);
+    container.appendChild(catEl);
+  });
+
+  el('statTotal').textContent = total;
+  el('statDone').textContent = done;
+  el('statRemain').textContent = total - done;
+  el('statStale').textContent = stale;
+}
+
+function fmtDate(iso){
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString('ja-JP', {month:'numeric', day:'numeric'}) + ' ' + d.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+}
+
+function getDragAfterElement(container, y){
+  const items = [...container.querySelectorAll('.item:not(.dragging)')];
+  return items.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height/2;
+    if (offset < 0 && offset > closest.offset) return { offset, element: child };
+    return closest;
+  }, { offset: -Infinity }).element;
+}
+
+// ============ アクション ============
+async function toggleDone(task, doneVal){
+  task.done = doneVal;
+  task.updatedAt = new Date().toISOString();
+  render();
+  if (!isDemoMode()){
+    await apiPost({ action:'updateTask', id: task.id, patch: { done: doneVal } });
+  }
+}
+
+async function handleDrop(taskId, newCategoryId, orderedIds){
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  task.categoryId = newCategoryId;
+  orderedIds.forEach((id, idx) => {
+    const t = state.tasks.find(tt => tt.id === id);
+    if (t) t.order = idx + 1;
+  });
+  task.updatedAt = new Date().toISOString();
+  render();
+  if (!isDemoMode()){
+    await apiPost({ action:'reorderTask', id: taskId, categoryId: newCategoryId, order: task.order });
+  }
+}
+
+// ---- タスクモーダル ----
+function openTaskModal(task){
+  editingTaskId = task ? task.id : null;
+  el('taskModalTitle').textContent = task ? 'タスクを編集' : 'タスクを登録';
+  el('taskTextInput').value = task ? task.text : '';
+  currentTags = task ? [...(task.tags||[])] : [];
+  renderTagPills();
+
+  const sel = el('taskCategorySelect');
+  sel.innerHTML = state.categories.sort((a,b)=>a.order-b.order).map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  if (task) sel.value = task.categoryId;
+
+  el('taskModalOverlay').classList.add('show');
+  el('taskTextInput').focus();
+}
+function closeTaskModal(){ el('taskModalOverlay').classList.remove('show'); }
+
+function renderTagPills(){
+  const row = el('tagInputRow');
+  row.querySelectorAll('.tag-pill').forEach(p => p.remove());
+  currentTags.forEach(tag => {
+    const pill = document.createElement('span');
+    pill.className = 'tag-pill';
+    pill.innerHTML = `${escapeHtml(tag)} <button type="button">×</button>`;
+    pill.querySelector('button').addEventListener('click', () => {
+      currentTags = currentTags.filter(t => t !== tag);
+      renderTagPills();
+    });
+    row.insertBefore(pill, el('tagInput'));
+  });
+}
+
+el('tagInput').addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter'){
+    ev.preventDefault();
+    const val = ev.target.value.trim();
+    if (val && !currentTags.includes(val)){
+      currentTags.push(val);
+      renderTagPills();
+    }
+    ev.target.value = '';
+  }
+});
+
+el('addTaskBtn').addEventListener('click', () => openTaskModal(null));
+el('taskModalCancel').addEventListener('click', closeTaskModal);
+el('taskModalSave').addEventListener('click', async () => {
+  const text = el('taskTextInput').value.trim();
+  if (!text) return;
+  const categoryId = el('taskCategorySelect').value;
+  if (editingTaskId){
+    const task = state.tasks.find(t => t.id === editingTaskId);
+    task.text = text; task.categoryId = categoryId; task.tags = [...currentTags];
+    task.updatedAt = new Date().toISOString();
+    if (!isDemoMode()) await apiPost({ action:'updateTask', id: task.id, patch:{ text, categoryId, tags: currentTags } });
+  } else {
+    const now = new Date().toISOString();
+    const newTask = { id: 'local-'+Date.now(), text, categoryId, tags:[...currentTags], done:false, order: state.tasks.length+1, createdAt: now, updatedAt: now, completedAt:null };
+    state.tasks.push(newTask);
+    if (!isDemoMode()){
+      const res = await apiPost({ action:'addTask', text, categoryId, tags: currentTags });
+      if (res.id) newTask.id = res.id;
+    }
+  }
+  closeTaskModal();
+  render();
+});
+
+// ---- カテゴリモーダル ----
+function openCategoryModal(cat){
+  editingCatId = cat ? cat.id : null;
+  el('catModalTitle').textContent = cat ? 'カテゴリを編集' : 'カテゴリを追加';
+  el('catNameInput').value = cat ? cat.name : '';
+  el('catModalDelete').style.display = cat ? 'inline-block' : 'none';
+
+  const swatchWrap = el('colorSwatches');
+  swatchWrap.innerHTML = PALETTE.map(c => `<span class="swatch" data-color="${c}" style="background:${c};"></span>`).join('');
+  const selectedColor = cat ? cat.color : PALETTE[0];
+  swatchWrap.querySelectorAll('.swatch').forEach(sw => {
+    if (sw.dataset.color === selectedColor) sw.classList.add('selected');
+    sw.addEventListener('click', () => {
+      swatchWrap.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+      sw.classList.add('selected');
+    });
+  });
+
+  el('catModalOverlay').classList.add('show');
+}
+function closeCategoryModal(){ el('catModalOverlay').classList.remove('show'); }
+
+el('addCategoryBtn').addEventListener('click', () => openCategoryModal(null));
+el('catModalCancel').addEventListener('click', closeCategoryModal);
+el('catModalSave').addEventListener('click', async () => {
+  const name = el('catNameInput').value.trim();
+  if (!name) return;
+  const selectedSwatch = el('colorSwatches').querySelector('.swatch.selected');
+  const color = selectedSwatch ? selectedSwatch.dataset.color : PALETTE[0];
+
+  if (editingCatId){
+    const cat = state.categories.find(c => c.id === editingCatId);
+    cat.name = name; cat.color = color;
+    if (!isDemoMode()) await apiPost({ action:'updateCategory', id: cat.id, patch:{ name, color } });
+  } else {
+    const newCat = { id:'local-cat-'+Date.now(), name, color, order: state.categories.length+1 };
+    state.categories.push(newCat);
+    if (!isDemoMode()){
+      const res = await apiPost({ action:'addCategory', name, color });
+      if (res.id) newCat.id = res.id;
+    }
+  }
+  closeCategoryModal();
+  render();
+});
+el('catModalDelete').addEventListener('click', async () => {
+  if (!editingCatId) return;
+  if (!confirm('このカテゴリを削除しますか？中のタスクは「未分類」になります。')) return;
+  state.categories = state.categories.filter(c => c.id !== editingCatId);
+  state.tasks.forEach(t => { if (t.categoryId === editingCatId) t.categoryId = ''; });
+  if (!isDemoMode()) await apiPost({ action:'deleteCategory', id: editingCatId });
+  closeCategoryModal();
+  render();
+});
+
+// ---- 完了表示トグル ----
+el('showDoneBtn').addEventListener('click', () => {
+  showDone = !showDone;
+  el('showDoneBtn').textContent = showDone ? '完了済みを隠す' : '✓ 完了済みを表示';
+  render();
+});
+
+// ---- 更新・設定 ----
+el('refreshBtn').addEventListener('click', loadAll);
+el('configBtn').addEventListener('click', () => {
+  el('webappUrlInput').value = WEBAPP_URL;
+  el('configModalOverlay').classList.add('show');
+});
+el('configModalCancel').addEventListener('click', () => el('configModalOverlay').classList.remove('show'));
+el('configModalSave').addEventListener('click', () => {
+  WEBAPP_URL = el('webappUrlInput').value.trim();
+  el('configModalOverlay').classList.remove('show');
+  loadAll();
+});
+
+// 初期ロード
+loadAll();
+</script>
+</body>
+</html>
