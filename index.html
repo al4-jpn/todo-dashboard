@@ -221,9 +221,42 @@
   }
   .calendar-task-chip.done{opacity:0.45;text-decoration:line-through;}
   .calendar-more{font-size:9.5px;color:var(--sub);padding-left:2px;}
+
+  /* Google Calendar風モバイル表示 */
+  .calendar-grid.mobile{gap:2px;}
+  .calendar-cell.mobile{
+    min-height:auto;aspect-ratio:1/1;border:none;background:transparent;border-radius:12px;
+    align-items:center;justify-content:flex-start;padding:5px 2px 4px;gap:4px;
+  }
+  .calendar-cell.mobile:not(.empty):active{background:#eef0f7;}
+  .calendar-cell.mobile.selected{background:#eef0ff;}
+  .calendar-cell.mobile .calendar-daynum{
+    width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+    border-radius:50%;font-size:12.5px;color:var(--text);font-weight:600;margin:0 auto;
+  }
+  .calendar-cell.mobile.today .calendar-daynum{background:var(--accent);color:#fff;}
+  .calendar-cell.mobile.selected:not(.today) .calendar-daynum{border:1.5px solid var(--accent);color:var(--accent);}
+  .calendar-dots{display:flex;gap:3px;justify-content:center;align-items:center;min-height:6px;flex-wrap:wrap;}
+  .calendar-dot{width:5px;height:5px;border-radius:50%;background:var(--chip-color,#4f6df5);flex:none;}
+  .calendar-dot.done{opacity:0.35;}
+  .calendar-dot-more{font-size:8px;color:var(--sub);font-weight:700;}
+
+  .calendar-agenda{
+    margin-top:14px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 14px;
+  }
+  .calendar-agenda-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .calendar-agenda-date{font-size:13.5px;font-weight:700;}
+  .calendar-agenda-add{
+    border:none;background:var(--accent);color:#fff;border-radius:999px;padding:6px 13px;
+    font-size:12px;font-weight:600;cursor:pointer;
+  }
+  .calendar-agenda-empty{color:var(--sub);font-size:12.5px;padding:8px 2px;}
+  .calendar-agenda .item{border-bottom:1px solid var(--border);}
+  .calendar-agenda .item:last-child{border-bottom:none;}
+
   @media (max-width:520px){
-    .calendar-cell{min-height:48px;padding:3px;}
-    .calendar-daynum{font-size:10px;}
+    .calendar-cell:not(.mobile){min-height:48px;padding:3px;}
+    .calendar-cell:not(.mobile) .calendar-daynum{font-size:10px;}
     .calendar-task-chip{font-size:9px;padding:1px 4px;}
   }
 
@@ -241,13 +274,13 @@
   .modal h3{margin:0 0 14px;font-size:16px;}
   .field{margin-bottom:14px;}
   .field label{display:block;font-size:12px;color:var(--sub);margin-bottom:5px;font-weight:600;}
-  .field input[type="text"], .field select{
-    width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:13.5px;
+  .field input[type="text"], .field input[type="date"], .field select{
+    width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;font-size:16px;
     font-family:inherit;
   }
   .tag-input-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;border:1px solid var(--border);
     border-radius:8px;padding:6px;}
-  .tag-input-row input{border:none;outline:none;flex:1;min-width:80px;font-size:13px;padding:4px;}
+  .tag-input-row input{border:none;outline:none;flex:1;min-width:80px;font-size:16px;padding:4px;}
   .tag-pill{
     background:#eef0ff;color:var(--accent);font-size:11px;padding:3px 9px;border-radius:999px;
     display:flex;align-items:center;gap:5px;font-weight:600;
@@ -387,6 +420,11 @@ let viewMode = 'category'; // 'category' | 'dateList' | 'calendar'
 let calendarMonth = new Date();
 calendarMonth.setDate(1);
 calendarMonth.setHours(0,0,0,0);
+let selectedCalDate = null; // モバイル表示でタップ選択中の日付（YYYY-MM-DD）
+
+function isMobileCalendar(){
+  return window.matchMedia('(max-width:520px)').matches;
+}
 
 const PALETTE = ['#4f6df5','#2f9e63','#e0532c','#9b59b6','#e0a92c','#16a3b6','#e05285','#607089'];
 
@@ -717,6 +755,7 @@ function renderCalendarView(){
 
   const year = calendarMonth.getFullYear();
   const month = calendarMonth.getMonth();
+  const mobile = isMobileCalendar();
 
   const header = document.createElement('div');
   header.className = 'calendar-header';
@@ -727,16 +766,18 @@ function renderCalendarView(){
   `;
   header.querySelector('.cal-prev').addEventListener('click', () => {
     calendarMonth = new Date(year, month - 1, 1);
+    selectedCalDate = null;
     render();
   });
   header.querySelector('.cal-next').addEventListener('click', () => {
     calendarMonth = new Date(year, month + 1, 1);
+    selectedCalDate = null;
     render();
   });
   container.appendChild(header);
 
   const grid = document.createElement('div');
-  grid.className = 'calendar-grid';
+  grid.className = 'calendar-grid' + (mobile ? ' mobile' : '');
   ['日','月','火','水','木','金','土'].forEach(wd => {
     const wdEl = document.createElement('div');
     wdEl.className = 'calendar-weekday';
@@ -762,49 +803,120 @@ function renderCalendarView(){
 
   for (let i = 0; i < startWeekday; i++){
     const blank = document.createElement('div');
-    blank.className = 'calendar-cell empty';
+    blank.className = 'calendar-cell empty' + (mobile ? ' mobile' : '');
     grid.appendChild(blank);
   }
 
   for (let d = 1; d <= daysInMonth; d++){
     const dateStr = fmtISODate(new Date(year, month, d));
+    const dayTasks = tasksByDate[dateStr] || [];
     const cell = document.createElement('div');
-    cell.className = 'calendar-cell' + (dateStr === todayStr ? ' today' : '');
+    cell.className = 'calendar-cell'
+      + (mobile ? ' mobile' : '')
+      + (dateStr === todayStr ? ' today' : '')
+      + (mobile && dateStr === selectedCalDate ? ' selected' : '');
 
     const dayNum = document.createElement('div');
     dayNum.className = 'calendar-daynum';
     dayNum.textContent = d;
     cell.appendChild(dayNum);
 
-    const tasksWrap = document.createElement('div');
-    tasksWrap.className = 'calendar-tasks';
-    const dayTasks = tasksByDate[dateStr] || [];
-    dayTasks.slice(0, 3).forEach(t => {
-      const chip = document.createElement('div');
-      chip.className = 'calendar-task-chip' + (t.done ? ' done' : '');
-      const cat = state.categories.find(c => c.id === t.categoryId);
-      chip.style.setProperty('--chip-color', cat ? cat.color : '#4f6df5');
-      chip.textContent = t.text;
-      chip.title = t.text;
-      chip.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        openTaskModal(t);
+    if (mobile){
+      const dotsWrap = document.createElement('div');
+      dotsWrap.className = 'calendar-dots';
+      dayTasks.slice(0, 4).forEach(t => {
+        const dot = document.createElement('div');
+        dot.className = 'calendar-dot' + (t.done ? ' done' : '');
+        const cat = state.categories.find(c => c.id === t.categoryId);
+        dot.style.setProperty('--chip-color', cat ? cat.color : '#4f6df5');
+        dotsWrap.appendChild(dot);
       });
-      tasksWrap.appendChild(chip);
-    });
-    if (dayTasks.length > 3){
-      const more = document.createElement('div');
-      more.className = 'calendar-more';
-      more.textContent = `+${dayTasks.length - 3}件`;
-      tasksWrap.appendChild(more);
-    }
-    cell.appendChild(tasksWrap);
+      if (dayTasks.length > 4){
+        const more = document.createElement('div');
+        more.className = 'calendar-dot-more';
+        more.textContent = `+${dayTasks.length - 4}`;
+        dotsWrap.appendChild(more);
+      }
+      cell.appendChild(dotsWrap);
 
-    cell.addEventListener('click', () => openTaskModal(null, dateStr));
+      cell.addEventListener('click', () => {
+        selectedCalDate = (selectedCalDate === dateStr) ? null : dateStr;
+        render();
+      });
+    } else {
+      const tasksWrap = document.createElement('div');
+      tasksWrap.className = 'calendar-tasks';
+      dayTasks.slice(0, 3).forEach(t => {
+        const chip = document.createElement('div');
+        chip.className = 'calendar-task-chip' + (t.done ? ' done' : '');
+        const cat = state.categories.find(c => c.id === t.categoryId);
+        chip.style.setProperty('--chip-color', cat ? cat.color : '#4f6df5');
+        chip.textContent = t.text;
+        chip.title = t.text;
+        chip.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          openTaskModal(t);
+        });
+        tasksWrap.appendChild(chip);
+      });
+      if (dayTasks.length > 3){
+        const more = document.createElement('div');
+        more.className = 'calendar-more';
+        more.textContent = `+${dayTasks.length - 3}件`;
+        tasksWrap.appendChild(more);
+      }
+      cell.appendChild(tasksWrap);
+
+      cell.addEventListener('click', () => openTaskModal(null, dateStr));
+    }
+
     grid.appendChild(cell);
   }
 
   container.appendChild(grid);
+
+  if (mobile){
+    let agendaDate = selectedCalDate;
+    if (!agendaDate && year === new Date().getFullYear() && month === new Date().getMonth()){
+      agendaDate = todayStr;
+    }
+    if (agendaDate){
+      container.appendChild(buildCalendarAgenda(agendaDate, tasksByDate[agendaDate] || []));
+    }
+  }
+}
+
+function buildCalendarAgenda(dateStr, dayTasks){
+  const wrap = document.createElement('div');
+  wrap.className = 'calendar-agenda';
+
+  const d = new Date(dateStr + 'T00:00:00');
+  const label = isNaN(d) ? dateStr : d.toLocaleDateString('ja-JP', {month:'numeric', day:'numeric', weekday:'short'});
+
+  const head = document.createElement('div');
+  head.className = 'calendar-agenda-header';
+  head.innerHTML = `<div class="calendar-agenda-date">${label}</div>`;
+  const addBtn = document.createElement('button');
+  addBtn.className = 'calendar-agenda-add';
+  addBtn.textContent = '＋ 追加';
+  addBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    openTaskModal(null, dateStr);
+  });
+  head.appendChild(addBtn);
+  wrap.appendChild(head);
+
+  if (dayTasks.length === 0){
+    const empty = document.createElement('div');
+    empty.className = 'calendar-agenda-empty';
+    empty.textContent = 'タスクはありません';
+    wrap.appendChild(empty);
+  } else {
+    dayTasks.forEach(t => {
+      wrap.appendChild(buildTaskItemRow(t, { draggable: false }));
+    });
+  }
+  return wrap;
 }
 
 function fmtDate(iso){
@@ -917,27 +1029,34 @@ el('taskModalDelete').addEventListener('click', async () => {
   closeTaskModal();
   if (task) await deleteTask(task);
 });
-el('taskModalSave').addEventListener('click', async () => {
+el('taskModalSave').addEventListener('click', () => {
   const text = el('taskTextInput').value.trim();
   if (!text) return;
   const categoryId = el('taskCategorySelect').value;
   const dueDate = el('taskDueInput').value || '';
+
   if (editingTaskId){
     const task = state.tasks.find(t => t.id === editingTaskId);
     task.text = text; task.categoryId = categoryId; task.tags = [...currentTags]; task.dueDate = dueDate;
     task.updatedAt = new Date().toISOString();
-    if (!isDemoMode()) await apiPost({ action:'updateTask', id: task.id, patch:{ text, categoryId, tags: currentTags, dueDate } });
+    closeTaskModal();
+    render();
+    if (!isDemoMode()){
+      apiPost({ action:'updateTask', id: task.id, patch:{ text, categoryId, tags: currentTags, dueDate } })
+        .catch(err => { console.error(err); el('syncStatus').textContent = '同期エラー: ' + err.message; });
+    }
   } else {
     const now = new Date().toISOString();
     const newTask = { id: 'local-'+Date.now(), text, categoryId, tags:[...currentTags], done:false, order: state.tasks.length+1, createdAt: now, updatedAt: now, completedAt:null, dueDate };
     state.tasks.push(newTask);
+    closeTaskModal();
+    render();
     if (!isDemoMode()){
-      const res = await apiPost({ action:'addTask', text, categoryId, tags: currentTags, dueDate });
-      if (res.id) newTask.id = res.id;
+      apiPost({ action:'addTask', text, categoryId, tags: currentTags, dueDate })
+        .then(res => { if (res && res.id) newTask.id = res.id; })
+        .catch(err => { console.error(err); el('syncStatus').textContent = '同期エラー: ' + err.message; });
     }
   }
-  closeTaskModal();
-  render();
 });
 
 // ---- カテゴリモーダル ----
@@ -964,7 +1083,7 @@ function closeCategoryModal(){ el('catModalOverlay').classList.remove('show'); }
 
 el('addCategoryBtn').addEventListener('click', () => openCategoryModal(null));
 el('catModalCancel').addEventListener('click', closeCategoryModal);
-el('catModalSave').addEventListener('click', async () => {
+el('catModalSave').addEventListener('click', () => {
   const name = el('catNameInput').value.trim();
   if (!name) return;
   const selectedSwatch = el('colorSwatches').querySelector('.swatch.selected');
@@ -973,26 +1092,36 @@ el('catModalSave').addEventListener('click', async () => {
   if (editingCatId){
     const cat = state.categories.find(c => c.id === editingCatId);
     cat.name = name; cat.color = color;
-    if (!isDemoMode()) await apiPost({ action:'updateCategory', id: cat.id, patch:{ name, color } });
+    closeCategoryModal();
+    render();
+    if (!isDemoMode()){
+      apiPost({ action:'updateCategory', id: cat.id, patch:{ name, color } })
+        .catch(err => { console.error(err); el('syncStatus').textContent = '同期エラー: ' + err.message; });
+    }
   } else {
     const newCat = { id:'local-cat-'+Date.now(), name, color, order: state.categories.length+1 };
     state.categories.push(newCat);
+    closeCategoryModal();
+    render();
     if (!isDemoMode()){
-      const res = await apiPost({ action:'addCategory', name, color });
-      if (res.id) newCat.id = res.id;
+      apiPost({ action:'addCategory', name, color })
+        .then(res => { if (res && res.id) newCat.id = res.id; })
+        .catch(err => { console.error(err); el('syncStatus').textContent = '同期エラー: ' + err.message; });
     }
   }
-  closeCategoryModal();
-  render();
 });
-el('catModalDelete').addEventListener('click', async () => {
+el('catModalDelete').addEventListener('click', () => {
   if (!editingCatId) return;
   if (!confirm('このカテゴリを削除しますか？中のタスクは「未分類」になります。')) return;
-  state.categories = state.categories.filter(c => c.id !== editingCatId);
-  state.tasks.forEach(t => { if (t.categoryId === editingCatId) t.categoryId = ''; });
-  if (!isDemoMode()) await apiPost({ action:'deleteCategory', id: editingCatId });
+  const catIdToDelete = editingCatId;
+  state.categories = state.categories.filter(c => c.id !== catIdToDelete);
+  state.tasks.forEach(t => { if (t.categoryId === catIdToDelete) t.categoryId = ''; });
   closeCategoryModal();
   render();
+  if (!isDemoMode()){
+    apiPost({ action:'deleteCategory', id: catIdToDelete })
+      .catch(err => { console.error(err); el('syncStatus').textContent = '同期エラー: ' + err.message; });
+  }
 });
 
 // ---- 完了表示トグル ----
@@ -1013,6 +1142,15 @@ el('configModalSave').addEventListener('click', () => {
   WEBAPP_URL = el('webappUrlInput').value.trim();
   el('configModalOverlay').classList.remove('show');
   loadAll();
+});
+
+// 画面幅が変わったとき（回転・PC/スマホ切替）カレンダー表示を再描画
+let calResizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(calResizeTimer);
+  calResizeTimer = setTimeout(() => {
+    if (viewMode === 'calendar') render();
+  }, 200);
 });
 
 // 初期ロード
