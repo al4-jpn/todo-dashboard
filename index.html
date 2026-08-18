@@ -594,9 +594,9 @@ function render(){
   renderTagFilter();
   computeStats();
 
-  el('categories').style.display = viewMode === 'category' ? '' : 'none';
-  el('dateListView').style.display = viewMode === 'dateList' ? '' : 'none';
-  el('calendarView').style.display = viewMode === 'calendar' ? '' : 'none';
+  el('categories').style.display = viewMode === 'category' ? 'block' : 'none';
+  el('dateListView').style.display = viewMode === 'dateList' ? 'block' : 'none';
+  el('calendarView').style.display = viewMode === 'calendar' ? 'block' : 'none';
 
   if (viewMode === 'dateList') renderDateListView();
   else if (viewMode === 'calendar') renderCalendarView();
