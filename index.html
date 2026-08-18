@@ -179,6 +179,54 @@
 
   .empty-hint{padding:14px 10px;color:var(--sub);font-size:12.5px;}
 
+  .view-toggle{display:flex;gap:6px;margin-bottom:18px;}
+  .view-btn{
+    border:1px solid var(--border);background:#fff;color:var(--sub);
+    border-radius:999px;padding:7px 14px;font-size:12.5px;font-weight:600;cursor:pointer;
+  }
+  .view-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+  #dateListView, #calendarView{display:none;}
+  .date-group-header{
+    font-size:12.5px;font-weight:700;color:var(--sub);
+    margin:20px 4px 8px;padding-bottom:5px;border-bottom:1px solid var(--border);
+  }
+  .date-group-header:first-child{margin-top:2px;}
+  .date-list-card{
+    background:var(--card);border:1px solid var(--border);border-radius:14px;
+    padding:4px 8px;
+  }
+
+  .calendar-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .calendar-title{font-size:15px;font-weight:700;}
+  .calendar-nav-btn{
+    border:1px solid var(--border);background:#fff;border-radius:8px;
+    width:32px;height:32px;font-size:15px;cursor:pointer;color:var(--text);
+  }
+  .calendar-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+  .calendar-weekday{text-align:center;font-size:10.5px;color:var(--sub);font-weight:700;padding-bottom:4px;}
+  .calendar-cell{
+    background:var(--card);border:1px solid var(--border);border-radius:8px;
+    min-height:64px;padding:4px;cursor:pointer;display:flex;flex-direction:column;gap:2px;
+  }
+  .calendar-cell.empty{background:transparent;border-color:transparent;cursor:default;}
+  .calendar-cell:not(.empty):hover{background:#f5f6fa;border-color:var(--accent);}
+  .calendar-cell.today{border-color:var(--accent);border-width:2px;}
+  .calendar-daynum{font-size:11px;font-weight:700;color:var(--sub);}
+  .calendar-cell.today .calendar-daynum{color:var(--accent);}
+  .calendar-tasks{display:flex;flex-direction:column;gap:2px;overflow:hidden;}
+  .calendar-task-chip{
+    font-size:10px;padding:2px 5px;border-radius:5px;background:var(--chip-color,#4f6df5);color:#fff;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;
+  }
+  .calendar-task-chip.done{opacity:0.45;text-decoration:line-through;}
+  .calendar-more{font-size:9.5px;color:var(--sub);padding-left:2px;}
+  @media (max-width:520px){
+    .calendar-cell{min-height:48px;padding:3px;}
+    .calendar-daynum{font-size:10px;}
+    .calendar-task-chip{font-size:9px;padding:1px 4px;}
+  }
+
   footer{text-align:center;color:var(--sub);font-size:11.5px;margin-top:24px;}
 
   /* Modal */
@@ -245,9 +293,17 @@
     <div class="stat"><div class="num" id="statStale">0</div><div class="label">停滞(3日+)</div></div>
   </div>
 
-  <div id="categories"></div>
+  <div class="view-toggle" id="viewToggle">
+    <button class="view-btn active" data-view="category">📁 カテゴリ</button>
+    <button class="view-btn" data-view="dateList">📅 期日順</button>
+    <button class="view-btn" data-view="calendar">🗓 カレンダー</button>
+  </div>
 
-  <footer>ドラッグでタスクを並び替え・カテゴリ移動できます。データはGoogleスプレッドシートに同期されます。</footer>
+  <div id="categories"></div>
+  <div class="date-list-card" id="dateListView"></div>
+  <div id="calendarView"></div>
+
+  <footer>ドラッグでタスクを並び替え・カテゴリ移動できます。カレンダーの日付をタップするとその日を期日にタスク登録できます。データはGoogleスプレッドシートに同期されます。</footer>
 </div>
 
 <!-- タスク追加/編集モーダル -->
@@ -327,6 +383,10 @@ let editingTaskId = null; // null = 新規, id = 編集
 let editingCatId = null;
 let currentTags = [];
 let dragTaskId = null;
+let viewMode = 'category'; // 'category' | 'dateList' | 'calendar'
+let calendarMonth = new Date();
+calendarMonth.setDate(1);
+calendarMonth.setHours(0,0,0,0);
 
 const PALETTE = ['#4f6df5','#2f9e63','#e0532c','#9b59b6','#e0a92c','#16a3b6','#e05285','#607089'];
 
@@ -451,17 +511,105 @@ function fmtDueLabel(dueDate){
   return d.toLocaleDateString('ja-JP', {month:'numeric', day:'numeric', weekday:'short'});
 }
 
+function fmtISODate(d){
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+
+function fmtGroupDateLabel(dueDate){
+  const d = new Date(dueDate + 'T00:00:00');
+  if (isNaN(d)) return '';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diffDays = Math.round((d - today) / 86400000);
+  const label = d.toLocaleDateString('ja-JP', {year:'numeric', month:'numeric', day:'numeric', weekday:'short'});
+  if (diffDays === 0) return `今日 (${label})`;
+  if (diffDays === 1) return `明日 (${label})`;
+  if (diffDays === -1) return `昨日 (${label})`;
+  return label;
+}
+
+function buildTaskItemRow(task, opts){
+  opts = opts || {};
+  const draggable = opts.draggable !== false;
+
+  const row = document.createElement('div');
+  row.className = 'item' + (task.done ? ' done' : '');
+  row.draggable = draggable;
+  row.dataset.taskId = task.id;
+
+  const stale_ = isStale(task);
+  const overdue_ = isOverdue(task);
+  const tagsHtml = (task.tags||[]).map(tag => {
+    const cls = (tag === '急ぎ') ? 'badge urgent' : 'badge tag';
+    return `<span class="${cls}">${escapeHtml(tag)}</span>`;
+  }).join('');
+  const dueHtml = task.dueDate ? `<span class="badge ${overdue_?'overdue':'due'}">${overdue_?'⚠️ ':'📅 '}期日 ${fmtDueLabel(task.dueDate)}</span>` : '';
+
+  row.innerHTML = `
+    <input type="checkbox" ${task.done?'checked':''}>
+    <div class="item-body">
+      <div class="item-text">${escapeHtml(task.text)}</div>
+      <div class="item-meta">${dueHtml}${tagsHtml}</div>
+      <div class="item-updated ${stale_?'stale':''}">${task.done ? '完了済み' : (stale_ ? `⚠️ ${staleDays(task)}日更新なし` : '更新: ' + fmtDate(task.updatedAt))}</div>
+    </div>
+    <div class="item-actions">
+      <button class="icon-btn edit-task" title="編集">✎</button>
+      <button class="icon-btn delete-task" title="削除">🗑</button>
+    </div>
+  `;
+
+  row.querySelector('input[type=checkbox]').addEventListener('change', (ev) => {
+    toggleDone(task, ev.target.checked);
+  });
+  row.querySelector('.edit-task').addEventListener('click', () => openTaskModal(task));
+  row.querySelector('.delete-task').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    deleteTask(task);
+  });
+
+  if (draggable){
+    row.addEventListener('dragstart', () => {
+      dragTaskId = task.id;
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      dragTaskId = null;
+    });
+  }
+
+  return row;
+}
+
+function computeStats(){
+  let total=0, done=0, stale=0;
+  state.tasks.forEach(t => { total++; if (t.done) done++; if (isStale(t)) stale++; });
+  el('statTotal').textContent = total;
+  el('statDone').textContent = done;
+  el('statRemain').textContent = total - done;
+  el('statStale').textContent = stale;
+}
+
 function render(){
   renderTagFilter();
+  computeStats();
+
+  el('categories').style.display = viewMode === 'category' ? '' : 'none';
+  el('dateListView').style.display = viewMode === 'dateList' ? '' : 'none';
+  el('calendarView').style.display = viewMode === 'calendar' ? '' : 'none';
+
+  if (viewMode === 'dateList') renderDateListView();
+  else if (viewMode === 'calendar') renderCalendarView();
+  else renderCategoryView();
+}
+
+function renderCategoryView(){
   const container = el('categories');
   container.innerHTML = '';
-
-  let total=0, done=0, stale=0;
   const sortedCats = [...state.categories].sort((a,b)=>a.order-b.order);
 
   sortedCats.forEach(cat => {
     let items = state.tasks.filter(t => t.categoryId === cat.id);
-    items.forEach(t => { total++; if(t.done) done++; if(isStale(t)) stale++; });
 
     if (activeTagFilters.size > 0){
       items = items.filter(t => (t.tags||[]).some(tag => activeTagFilters.has(tag)));
@@ -505,52 +653,7 @@ function render(){
     }
 
     items.forEach(task => {
-      const row = document.createElement('div');
-      row.className = 'item' + (task.done ? ' done' : '');
-      row.draggable = true;
-      row.dataset.taskId = task.id;
-
-      const stale_ = isStale(task);
-      const overdue_ = isOverdue(task);
-      const tagsHtml = (task.tags||[]).map(tag => {
-        const cls = (tag === '急ぎ') ? 'badge urgent' : 'badge tag';
-        return `<span class="${cls}">${escapeHtml(tag)}</span>`;
-      }).join('');
-      const dueHtml = task.dueDate ? `<span class="badge ${overdue_?'overdue':'due'}">${overdue_?'⚠️ ':'📅 '}期日 ${fmtDueLabel(task.dueDate)}</span>` : '';
-
-      row.innerHTML = `
-        <input type="checkbox" ${task.done?'checked':''}>
-        <div class="item-body">
-          <div class="item-text">${escapeHtml(task.text)}</div>
-          <div class="item-meta">${dueHtml}${tagsHtml}</div>
-          <div class="item-updated ${stale_?'stale':''}">${task.done ? '完了済み' : (stale_ ? `⚠️ ${staleDays(task)}日更新なし` : '更新: ' + fmtDate(task.updatedAt))}</div>
-        </div>
-        <div class="item-actions">
-          <button class="icon-btn edit-task" title="編集">✎</button>
-          <button class="icon-btn delete-task" title="削除">🗑</button>
-        </div>
-      `;
-
-      row.querySelector('input[type=checkbox]').addEventListener('change', (ev) => {
-        toggleDone(task, ev.target.checked);
-      });
-      row.querySelector('.edit-task').addEventListener('click', () => openTaskModal(task));
-      row.querySelector('.delete-task').addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        deleteTask(task);
-      });
-
-      // drag events
-      row.addEventListener('dragstart', () => {
-        dragTaskId = task.id;
-        row.classList.add('dragging');
-      });
-      row.addEventListener('dragend', () => {
-        row.classList.remove('dragging');
-        dragTaskId = null;
-      });
-
-      itemsEl.appendChild(row);
+      itemsEl.appendChild(buildTaskItemRow(task, { draggable: true }));
     });
 
     itemsEl.addEventListener('dragover', (ev) => {
@@ -571,11 +674,137 @@ function render(){
     catEl.appendChild(itemsEl);
     container.appendChild(catEl);
   });
+}
 
-  el('statTotal').textContent = total;
-  el('statDone').textContent = done;
-  el('statRemain').textContent = total - done;
-  el('statStale').textContent = stale;
+function renderDateListView(){
+  const container = el('dateListView');
+  container.innerHTML = '';
+
+  let items = [...state.tasks];
+  if (activeTagFilters.size > 0){
+    items = items.filter(t => (t.tags||[]).some(tag => activeTagFilters.has(tag)));
+  }
+  if (!showDone) items = items.filter(t => !t.done);
+
+  items.sort((a,b) => {
+    const ad = a.dueDate || '9999-99-99', bd = b.dueDate || '9999-99-99';
+    if (ad !== bd) return ad < bd ? -1 : 1;
+    return (a.order||0) - (b.order||0);
+  });
+
+  if (items.length === 0){
+    container.innerHTML = '<div class="empty-hint">タスクはありません</div>';
+    return;
+  }
+
+  let lastKey = undefined;
+  items.forEach(task => {
+    const key = task.dueDate || '__none__';
+    if (key !== lastKey){
+      lastKey = key;
+      const header = document.createElement('div');
+      header.className = 'date-group-header';
+      header.textContent = task.dueDate ? fmtGroupDateLabel(task.dueDate) : '期日未設定';
+      container.appendChild(header);
+    }
+    container.appendChild(buildTaskItemRow(task, { draggable: false }));
+  });
+}
+
+function renderCalendarView(){
+  const container = el('calendarView');
+  container.innerHTML = '';
+
+  const year = calendarMonth.getFullYear();
+  const month = calendarMonth.getMonth();
+
+  const header = document.createElement('div');
+  header.className = 'calendar-header';
+  header.innerHTML = `
+    <button class="calendar-nav-btn cal-prev">‹</button>
+    <div class="calendar-title">${year}年${month+1}月</div>
+    <button class="calendar-nav-btn cal-next">›</button>
+  `;
+  header.querySelector('.cal-prev').addEventListener('click', () => {
+    calendarMonth = new Date(year, month - 1, 1);
+    render();
+  });
+  header.querySelector('.cal-next').addEventListener('click', () => {
+    calendarMonth = new Date(year, month + 1, 1);
+    render();
+  });
+  container.appendChild(header);
+
+  const grid = document.createElement('div');
+  grid.className = 'calendar-grid';
+  ['日','月','火','水','木','金','土'].forEach(wd => {
+    const wdEl = document.createElement('div');
+    wdEl.className = 'calendar-weekday';
+    wdEl.textContent = wd;
+    grid.appendChild(wdEl);
+  });
+
+  let tasksForCal = state.tasks.filter(t => t.dueDate);
+  if (activeTagFilters.size > 0){
+    tasksForCal = tasksForCal.filter(t => (t.tags||[]).some(tag => activeTagFilters.has(tag)));
+  }
+  if (!showDone) tasksForCal = tasksForCal.filter(t => !t.done);
+
+  const tasksByDate = {};
+  tasksForCal.forEach(t => {
+    (tasksByDate[t.dueDate] = tasksByDate[t.dueDate] || []).push(t);
+  });
+
+  const firstDay = new Date(year, month, 1);
+  const startWeekday = firstDay.getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayStr = fmtISODate(new Date());
+
+  for (let i = 0; i < startWeekday; i++){
+    const blank = document.createElement('div');
+    blank.className = 'calendar-cell empty';
+    grid.appendChild(blank);
+  }
+
+  for (let d = 1; d <= daysInMonth; d++){
+    const dateStr = fmtISODate(new Date(year, month, d));
+    const cell = document.createElement('div');
+    cell.className = 'calendar-cell' + (dateStr === todayStr ? ' today' : '');
+
+    const dayNum = document.createElement('div');
+    dayNum.className = 'calendar-daynum';
+    dayNum.textContent = d;
+    cell.appendChild(dayNum);
+
+    const tasksWrap = document.createElement('div');
+    tasksWrap.className = 'calendar-tasks';
+    const dayTasks = tasksByDate[dateStr] || [];
+    dayTasks.slice(0, 3).forEach(t => {
+      const chip = document.createElement('div');
+      chip.className = 'calendar-task-chip' + (t.done ? ' done' : '');
+      const cat = state.categories.find(c => c.id === t.categoryId);
+      chip.style.setProperty('--chip-color', cat ? cat.color : '#4f6df5');
+      chip.textContent = t.text;
+      chip.title = t.text;
+      chip.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        openTaskModal(t);
+      });
+      tasksWrap.appendChild(chip);
+    });
+    if (dayTasks.length > 3){
+      const more = document.createElement('div');
+      more.className = 'calendar-more';
+      more.textContent = `+${dayTasks.length - 3}件`;
+      tasksWrap.appendChild(more);
+    }
+    cell.appendChild(tasksWrap);
+
+    cell.addEventListener('click', () => openTaskModal(null, dateStr));
+    grid.appendChild(cell);
+  }
+
+  container.appendChild(grid);
 }
 
 function fmtDate(iso){
@@ -620,11 +849,11 @@ async function handleDrop(taskId, newCategoryId, orderedIds){
 }
 
 // ---- タスクモーダル ----
-function openTaskModal(task){
+function openTaskModal(task, defaultDueDate){
   editingTaskId = task ? task.id : null;
   el('taskModalTitle').textContent = task ? 'タスクを編集' : 'タスクを登録';
   el('taskTextInput').value = task ? task.text : '';
-  el('taskDueInput').value = task ? (task.dueDate || '') : '';
+  el('taskDueInput').value = task ? (task.dueDate || '') : (defaultDueDate || '');
   el('taskModalDelete').style.display = task ? 'inline-block' : 'none';
   currentTags = task ? [...(task.tags||[])] : [];
   renderTagPills();
@@ -673,6 +902,14 @@ el('tagInput').addEventListener('keydown', (ev) => {
 });
 
 el('addTaskBtn').addEventListener('click', () => openTaskModal(null));
+
+document.querySelectorAll('.view-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    viewMode = btn.dataset.view;
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b === btn));
+    render();
+  });
+});
 el('taskModalCancel').addEventListener('click', closeTaskModal);
 el('taskModalDelete').addEventListener('click', async () => {
   if (!editingTaskId) return;
