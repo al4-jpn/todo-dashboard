@@ -169,6 +169,8 @@
   }
   .badge.urgent{background:var(--urgent-bg);color:var(--urgent);}
   .badge.tag{background:#eef0ff;color:var(--accent);}
+  .badge.due{background:#eef0ff;color:var(--accent);}
+  .badge.overdue{background:var(--urgent-bg);color:var(--urgent);}
   .item-updated{font-size:10px;color:#c2c7d0;margin-top:3px;}
   .item-updated.stale{color:var(--urgent);font-weight:600;}
   .item-actions{display:flex;gap:2px;opacity:0;transition:opacity .15s;}
@@ -261,12 +263,17 @@
       <select id="taskCategorySelect"></select>
     </div>
     <div class="field">
+      <label>期日</label>
+      <input type="date" id="taskDueInput">
+    </div>
+    <div class="field">
       <label>タグ（Enterで追加）</label>
       <div class="tag-input-row" id="tagInputRow">
         <input type="text" id="tagInput" placeholder="タグを入力してEnter">
       </div>
     </div>
     <div class="modal-actions">
+      <button class="btn btn-secondary" id="taskModalDelete" style="display:none;color:#e0532c;margin-right:auto;">削除</button>
       <button class="btn btn-secondary" id="taskModalCancel">キャンセル</button>
       <button class="btn btn-primary" id="taskModalSave">保存</button>
     </div>
@@ -338,8 +345,8 @@ function seedDemoData(){
     { id:'cat-ops', name:'運営・クラス関連', color:'#2f9e63', order:2 },
     { id:'cat-creative', name:'制作関連', color:'#e0532c', order:3 },
   ];
-  const mk = (text, categoryId, tags, order) => ({
-    id: 'demo-' + text, text, categoryId, tags: tags||[], done:false, order, createdAt: now, updatedAt: now, completedAt:null
+  const mk = (text, categoryId, tags, order, dueDate) => ({
+    id: 'demo-' + text, text, categoryId, tags: tags||[], done:false, order, createdAt: now, updatedAt: now, completedAt:null, dueDate: dueDate||''
   });
   state.tasks = [
     mk('規約更新','cat-office',[],1),
@@ -430,6 +437,20 @@ function staleDays(task){
   return Math.floor((Date.now() - updated.getTime()) / 86400000);
 }
 
+function isOverdue(task){
+  if (task.done || !task.dueDate) return false;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const due = new Date(task.dueDate + 'T00:00:00');
+  if (isNaN(due)) return false;
+  return due.getTime() < today.getTime();
+}
+
+function fmtDueLabel(dueDate){
+  const d = new Date(dueDate + 'T00:00:00');
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString('ja-JP', {month:'numeric', day:'numeric', weekday:'short'});
+}
+
 function render(){
   renderTagFilter();
   const container = el('categories');
@@ -490,20 +511,23 @@ function render(){
       row.dataset.taskId = task.id;
 
       const stale_ = isStale(task);
+      const overdue_ = isOverdue(task);
       const tagsHtml = (task.tags||[]).map(tag => {
         const cls = (tag === '急ぎ') ? 'badge urgent' : 'badge tag';
         return `<span class="${cls}">${escapeHtml(tag)}</span>`;
       }).join('');
+      const dueHtml = task.dueDate ? `<span class="badge ${overdue_?'overdue':'due'}">${overdue_?'⚠️ ':'📅 '}期日 ${fmtDueLabel(task.dueDate)}</span>` : '';
 
       row.innerHTML = `
         <input type="checkbox" ${task.done?'checked':''}>
         <div class="item-body">
           <div class="item-text">${escapeHtml(task.text)}</div>
-          <div class="item-meta">${tagsHtml}</div>
+          <div class="item-meta">${dueHtml}${tagsHtml}</div>
           <div class="item-updated ${stale_?'stale':''}">${task.done ? '完了済み' : (stale_ ? `⚠️ ${staleDays(task)}日更新なし` : '更新: ' + fmtDate(task.updatedAt))}</div>
         </div>
         <div class="item-actions">
           <button class="icon-btn edit-task" title="編集">✎</button>
+          <button class="icon-btn delete-task" title="削除">🗑</button>
         </div>
       `;
 
@@ -511,6 +535,10 @@ function render(){
         toggleDone(task, ev.target.checked);
       });
       row.querySelector('.edit-task').addEventListener('click', () => openTaskModal(task));
+      row.querySelector('.delete-task').addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        deleteTask(task);
+      });
 
       // drag events
       row.addEventListener('dragstart', () => {
@@ -596,6 +624,8 @@ function openTaskModal(task){
   editingTaskId = task ? task.id : null;
   el('taskModalTitle').textContent = task ? 'タスクを編集' : 'タスクを登録';
   el('taskTextInput').value = task ? task.text : '';
+  el('taskDueInput').value = task ? (task.dueDate || '') : '';
+  el('taskModalDelete').style.display = task ? 'inline-block' : 'none';
   currentTags = task ? [...(task.tags||[])] : [];
   renderTagPills();
 
@@ -605,6 +635,13 @@ function openTaskModal(task){
 
   el('taskModalOverlay').classList.add('show');
   el('taskTextInput').focus();
+}
+
+async function deleteTask(task){
+  if (!confirm(`「${task.text}」を削除しますか？この操作は取り消せません。`)) return;
+  state.tasks = state.tasks.filter(t => t.id !== task.id);
+  render();
+  if (!isDemoMode()) await apiPost({ action:'deleteTask', id: task.id });
 }
 function closeTaskModal(){ el('taskModalOverlay').classList.remove('show'); }
 
@@ -637,21 +674,28 @@ el('tagInput').addEventListener('keydown', (ev) => {
 
 el('addTaskBtn').addEventListener('click', () => openTaskModal(null));
 el('taskModalCancel').addEventListener('click', closeTaskModal);
+el('taskModalDelete').addEventListener('click', async () => {
+  if (!editingTaskId) return;
+  const task = state.tasks.find(t => t.id === editingTaskId);
+  closeTaskModal();
+  if (task) await deleteTask(task);
+});
 el('taskModalSave').addEventListener('click', async () => {
   const text = el('taskTextInput').value.trim();
   if (!text) return;
   const categoryId = el('taskCategorySelect').value;
+  const dueDate = el('taskDueInput').value || '';
   if (editingTaskId){
     const task = state.tasks.find(t => t.id === editingTaskId);
-    task.text = text; task.categoryId = categoryId; task.tags = [...currentTags];
+    task.text = text; task.categoryId = categoryId; task.tags = [...currentTags]; task.dueDate = dueDate;
     task.updatedAt = new Date().toISOString();
-    if (!isDemoMode()) await apiPost({ action:'updateTask', id: task.id, patch:{ text, categoryId, tags: currentTags } });
+    if (!isDemoMode()) await apiPost({ action:'updateTask', id: task.id, patch:{ text, categoryId, tags: currentTags, dueDate } });
   } else {
     const now = new Date().toISOString();
-    const newTask = { id: 'local-'+Date.now(), text, categoryId, tags:[...currentTags], done:false, order: state.tasks.length+1, createdAt: now, updatedAt: now, completedAt:null };
+    const newTask = { id: 'local-'+Date.now(), text, categoryId, tags:[...currentTags], done:false, order: state.tasks.length+1, createdAt: now, updatedAt: now, completedAt:null, dueDate };
     state.tasks.push(newTask);
     if (!isDemoMode()){
-      const res = await apiPost({ action:'addTask', text, categoryId, tags: currentTags });
+      const res = await apiPost({ action:'addTask', text, categoryId, tags: currentTags, dueDate });
       if (res.id) newTask.id = res.id;
     }
   }
