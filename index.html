@@ -188,6 +188,20 @@
     .item-actions{opacity:0;transition:opacity .15s;}
     .item:hover .item-actions{opacity:1;}
   }
+  .quick-date-popover{
+    position:fixed;z-index:1000;background:#fff;border:1px solid var(--border);
+    border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.15);padding:8px;
+    display:flex;align-items:center;gap:6px;
+  }
+  .quick-date-popover input[type="date"]{
+    border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:14px;
+    font-family:inherit;
+  }
+  .quick-date-popover button{
+    border:none;background:transparent;color:var(--sub);cursor:pointer;
+    font-size:12px;padding:4px 6px;border-radius:6px;white-space:nowrap;
+  }
+  .quick-date-popover button:hover{background:#eee;}
   .drop-indicator{height:2px;background:var(--accent);margin:2px 10px;border-radius:2px;}
 
   .empty-hint{padding:14px 10px;color:var(--sub);font-size:12.5px;}
@@ -458,6 +472,7 @@ let editingTaskId = null; // null = 新規, id = 編集
 let editingCatId = null;
 let currentTags = [];
 let dragTaskId = null;
+let activeQuickDatePopover = null;
 let viewMode = 'category'; // 'category' | 'dateList' | 'calendar'
 let calendarMonth = new Date();
 calendarMonth.setDate(1);
@@ -639,6 +654,7 @@ function buildTaskItemRow(task, opts){
       <div class="item-updated ${stale_?'stale':''}">${task.done ? '完了済み' : (stale_ ? `⚠️ ${staleDays(task)}日更新なし` : '更新: ' + fmtDate(task.updatedAt))}</div>
     </div>
     <div class="item-actions">
+      <button class="icon-btn quick-date" title="期日をすぐ変更">📅</button>
       <button class="icon-btn edit-task" title="編集">✎</button>
       <button class="icon-btn delete-task" title="削除">🗑</button>
     </div>
@@ -646,6 +662,10 @@ function buildTaskItemRow(task, opts){
 
   row.querySelector('input[type=checkbox]').addEventListener('change', (ev) => {
     toggleDone(task, ev.target.checked);
+  });
+  row.querySelector('.quick-date').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    openQuickDatePopover(task, ev.currentTarget);
   });
   row.querySelector('.edit-task').addEventListener('click', () => openTaskModal(task));
   row.querySelector('.delete-task').addEventListener('click', (ev) => {
@@ -1013,6 +1033,77 @@ async function toggleDone(task, doneVal){
   render();
   if (!isDemoMode()){
     await apiPost({ action:'updateTask', id: task.id, patch: { done: doneVal } });
+  }
+}
+
+// タスク編集画面を開かずに、カレンダーアイコンから期日だけをその場で変更する
+function openQuickDatePopover(task, anchorEl){
+  closeQuickDatePopover();
+
+  const pop = document.createElement('div');
+  pop.className = 'quick-date-popover';
+  pop.innerHTML = `
+    <input type="date" value="${task.dueDate || ''}">
+    <button type="button" class="quick-date-clear">クリア</button>
+  `;
+  document.body.appendChild(pop);
+
+  const rect = anchorEl.getBoundingClientRect();
+  const popRect = pop.getBoundingClientRect();
+  let top = rect.bottom + 6;
+  let left = rect.left;
+  if (left + popRect.width > window.innerWidth - 8) left = window.innerWidth - popRect.width - 8;
+  if (top + popRect.height > window.innerHeight - 8) top = rect.top - popRect.height - 6;
+  pop.style.top = Math.max(8, top) + 'px';
+  pop.style.left = Math.max(8, left) + 'px';
+
+  const input = pop.querySelector('input[type=date]');
+  input.addEventListener('change', () => {
+    quickUpdateDueDate(task, input.value);
+    closeQuickDatePopover();
+  });
+  pop.querySelector('.quick-date-clear').addEventListener('click', () => {
+    quickUpdateDueDate(task, '');
+    closeQuickDatePopover();
+  });
+  pop.addEventListener('click', (ev) => ev.stopPropagation());
+
+  activeQuickDatePopover = pop;
+  setTimeout(() => document.addEventListener('click', closeQuickDatePopoverOnOutsideClick), 0);
+
+  if (typeof input.showPicker === 'function'){
+    try { input.showPicker(); } catch(e) { input.focus(); }
+  } else {
+    input.focus();
+  }
+}
+
+function closeQuickDatePopoverOnOutsideClick(){
+  closeQuickDatePopover();
+}
+
+function closeQuickDatePopover(){
+  document.removeEventListener('click', closeQuickDatePopoverOnOutsideClick);
+  if (activeQuickDatePopover){
+    activeQuickDatePopover.remove();
+    activeQuickDatePopover = null;
+  }
+}
+
+function quickUpdateDueDate(task, newDueDate){
+  const dueDate = newDueDate || '';
+  if (dueDate === (task.dueDate || '')) return;
+  task.dueDate = dueDate;
+  const patch = { dueDate };
+  if (!dueDate){
+    task.reminderDays = [];
+    patch.reminderDays = [];
+  }
+  task.updatedAt = new Date().toISOString();
+  render();
+  if (!isDemoMode()){
+    apiPost({ action:'updateTask', id: task.id, patch })
+      .catch(err => { console.error(err); el('syncStatus').textContent = '同期エラー: ' + err.message; });
   }
 }
 
