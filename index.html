@@ -104,7 +104,7 @@
   }
   .tag-chip.active{background:var(--accent);color:#fff;}
 
-  .summary{display:flex;gap:12px;margin-bottom:22px;flex-wrap:wrap;}
+  .summary{display:flex;gap:12px;margin-bottom:0;flex-wrap:wrap;}
   .stat{
     background:var(--card);
     border:1px solid var(--border);
@@ -115,6 +115,45 @@
   }
   .stat .num{font-size:20px;font-weight:700;}
   .stat .label{font-size:10.5px;color:var(--sub);margin-top:2px;}
+
+  .top-row{display:flex;gap:16px;align-items:stretch;margin-bottom:20px;}
+  .top-left{flex:1;min-width:0;display:flex;flex-direction:column;gap:18px;}
+  .top-left .tag-filter, .top-left .summary{margin-bottom:0;}
+
+  .notes-panel{
+    width:300px;flex-shrink:0;background:var(--card);border:1px solid var(--border);
+    border-radius:14px;padding:14px;display:flex;flex-direction:column;
+  }
+  .notes-panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .notes-panel-header h2{font-size:13.5px;margin:0;}
+  .notes-add-btn{
+    border:none;background:var(--accent);color:#fff;width:24px;height:24px;border-radius:7px;
+    font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+  .notes-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;overflow-y:auto;max-height:320px;}
+  .note-card{
+    background:#fffceb;border:1px solid #f0e6b8;border-radius:10px;padding:8px 9px;
+    min-height:76px;cursor:pointer;font-size:11.5px;line-height:1.5;color:var(--text);
+    display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;
+    white-space:pre-wrap;word-break:break-word;
+  }
+  .note-card:hover{border-color:#e0c968;}
+  .note-card-empty{
+    background:transparent;border:1.5px dashed var(--border);color:var(--sub);
+    display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:300;
+  }
+  .note-card-empty:hover{border-color:var(--accent);color:var(--accent);}
+  .notes-empty-hint{font-size:11.5px;color:var(--sub);text-align:center;padding:14px 4px;}
+
+  .note-modal{max-width:480px;}
+  .note-modal textarea{width:100%;min-height:220px;padding:10px 11px;border:1px solid var(--border);
+    border-radius:8px;font-size:15px;font-family:inherit;line-height:1.6;resize:vertical;}
+
+  @media (max-width:760px){
+    .top-row{flex-direction:column;}
+    .notes-panel{width:100%;}
+    .notes-grid{grid-template-columns:repeat(3,1fr);max-height:none;}
+  }
 
   .category{
     background:var(--card);
@@ -350,19 +389,31 @@
     URLはスプレッドシートに紐づく Apps Script を「ウェブアプリ」としてデプロイすると発行されます。設定するまではこの画面はデモ表示（保存されません）です。
   </div>
 
-  <div class="toolbar">
-    <button class="btn btn-primary" id="addTaskBtn">＋ タスクを登録</button>
-    <button class="btn btn-secondary" id="addCategoryBtn">＋ カテゴリを追加</button>
-    <button class="btn btn-ghost" id="showDoneBtn">✓ 完了済みを表示</button>
-  </div>
+  <div class="top-row">
+    <div class="top-left">
+      <div class="toolbar">
+        <button class="btn btn-primary" id="addTaskBtn">＋ タスクを登録</button>
+        <button class="btn btn-secondary" id="addCategoryBtn">＋ カテゴリを追加</button>
+        <button class="btn btn-ghost" id="showDoneBtn">✓ 完了済みを表示</button>
+      </div>
 
-  <div class="tag-filter" id="tagFilter"></div>
+      <div class="tag-filter" id="tagFilter"></div>
 
-  <div class="summary">
-    <div class="stat"><div class="num" id="statTotal">0</div><div class="label">合計</div></div>
-    <div class="stat"><div class="num" id="statDone">0</div><div class="label">完了</div></div>
-    <div class="stat"><div class="num" id="statRemain">0</div><div class="label">未完了</div></div>
-    <div class="stat"><div class="num" id="statStale">0</div><div class="label">停滞(3日+)</div></div>
+      <div class="summary">
+        <div class="stat"><div class="num" id="statTotal">0</div><div class="label">合計</div></div>
+        <div class="stat"><div class="num" id="statDone">0</div><div class="label">完了</div></div>
+        <div class="stat"><div class="num" id="statRemain">0</div><div class="label">未完了</div></div>
+        <div class="stat"><div class="num" id="statStale">0</div><div class="label">停滞(3日+)</div></div>
+      </div>
+    </div>
+
+    <div class="notes-panel">
+      <div class="notes-panel-header">
+        <h2>📝 メモ</h2>
+        <button class="notes-add-btn" id="addNoteBtn" title="メモを追加">＋</button>
+      </div>
+      <div class="notes-grid" id="notesGrid"></div>
+    </div>
   </div>
 
   <div class="view-toggle" id="viewToggle">
@@ -445,6 +496,21 @@
   </div>
 </div>
 
+<!-- メモ追加/編集モーダル -->
+<div class="modal-overlay" id="noteModalOverlay">
+  <div class="modal note-modal">
+    <h3 id="noteModalTitle">メモを追加</h3>
+    <div class="field">
+      <textarea id="noteTextInput" placeholder="メモを入力"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="noteModalDelete" style="display:none;color:#e0532c;margin-right:auto;">削除</button>
+      <button class="btn btn-secondary" id="noteModalCancel">キャンセル</button>
+      <button class="btn btn-primary" id="noteModalSave">保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- API設定モーダル -->
 <div class="modal-overlay" id="configModalOverlay">
   <div class="modal">
@@ -464,12 +530,13 @@
 // ============ 状態管理（メモリ上。ブラウザストレージは使わない） ============
 let WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbx6RUnhQUYWkrplq7BOcyL5jJUTsrds-iRrhtCjxbFqQygwLPI4tzVngy_yE0bstq_2uA/exec'; // Apps Script ウェブアプリURL（画面の「⚙️ API設定」から変更も可）
 const API_TOKEN = '91d772de2fafad9bf551e716c391bc78'; // Config シートの API_TOKEN と一致させる簡易認証トークン
-let state = { tasks: [], categories: [] };
+let state = { tasks: [], categories: [], notes: [] };
 let collapsedCats = new Set();
 let activeTagFilters = new Set();
 let showDone = false;
 let editingTaskId = null; // null = 新規, id = 編集
 let editingCatId = null;
+let editingNoteId = null; // null = 新規, id = 編集
 let currentTags = [];
 let dragTaskId = null;
 let activeQuickDatePopover = null;
@@ -516,6 +583,10 @@ function seedDemoData(){
     mk('MyWay作品制作','cat-creative',[],1),
     mk('Feiifoaアパレルページ作成','cat-creative',[],2),
   ];
+  state.notes = [
+    { id:'demo-note-1', text:'発表会の会場候補：\n・第一候補：市民ホール\n・第二候補：区民会館', order:1, createdAt: now, updatedAt: now },
+    { id:'demo-note-2', text:'来月の振替レッスンまとめはこちらのスプレッドシート参照', order:2, createdAt: now, updatedAt: now },
+  ];
 }
 
 // ============ API通信 ============
@@ -543,6 +614,7 @@ async function loadAll(){
     if (data.error) throw new Error(data.error);
     state.tasks = data.tasks;
     state.categories = data.categories;
+    state.notes = data.notes || [];
     el('syncStatus').textContent = '同期済み ' + new Date().toLocaleTimeString('ja-JP');
   }catch(err){
     el('syncStatus').textContent = '同期エラー: ' + err.message;
@@ -694,6 +766,7 @@ function computeStats(){
 function render(){
   renderTagFilter();
   computeStats();
+  renderNotes();
 
   el('categories').style.display = viewMode === 'category' ? 'block' : 'none';
   el('dateListView').style.display = viewMode === 'dateList' ? 'block' : 'none';
@@ -1305,6 +1378,87 @@ el('catModalDelete').addEventListener('click', () => {
   render();
   if (!isDemoMode()){
     apiPost({ action:'deleteCategory', id: catIdToDelete })
+      .catch(err => { console.error(err); el('syncStatus').textContent = '同期エラー: ' + err.message; });
+  }
+});
+
+// ---- メモ（Notion風ブロック） ----
+function renderNotes(){
+  const grid = el('notesGrid');
+  grid.innerHTML = '';
+
+  const sorted = [...state.notes].sort((a,b)=>(a.order||0)-(b.order||0));
+  sorted.forEach(note => {
+    const card = document.createElement('div');
+    card.className = 'note-card';
+    card.textContent = note.text || '';
+    card.addEventListener('click', () => openNoteModal(note.id));
+    grid.appendChild(card);
+  });
+
+  const addCard = document.createElement('div');
+  addCard.className = 'note-card note-card-empty';
+  addCard.title = 'メモを追加';
+  addCard.textContent = '＋';
+  addCard.addEventListener('click', () => openNoteModal(null));
+  grid.appendChild(addCard);
+}
+
+function openNoteModal(id){
+  editingNoteId = id;
+  if (id){
+    const note = state.notes.find(n => n.id === id);
+    el('noteModalTitle').textContent = 'メモを編集';
+    el('noteTextInput').value = note ? note.text : '';
+    el('noteModalDelete').style.display = 'inline-block';
+  } else {
+    el('noteModalTitle').textContent = 'メモを追加';
+    el('noteTextInput').value = '';
+    el('noteModalDelete').style.display = 'none';
+  }
+  el('noteModalOverlay').classList.add('show');
+  el('noteTextInput').focus();
+}
+function closeNoteModal(){ el('noteModalOverlay').classList.remove('show'); }
+
+el('addNoteBtn').addEventListener('click', () => openNoteModal(null));
+el('noteModalCancel').addEventListener('click', closeNoteModal);
+el('noteModalSave').addEventListener('click', () => {
+  const text = el('noteTextInput').value.trim();
+  if (!text) return;
+
+  if (editingNoteId){
+    const note = state.notes.find(n => n.id === editingNoteId);
+    note.text = text;
+    note.updatedAt = new Date().toISOString();
+    closeNoteModal();
+    render();
+    if (!isDemoMode()){
+      apiPost({ action:'updateNote', id: note.id, patch:{ text } })
+        .catch(err => { console.error(err); el('syncStatus').textContent = '同期エラー: ' + err.message; });
+    }
+  } else {
+    const now = new Date().toISOString();
+    const newNote = { id:'local-note-'+Date.now(), text, order: state.notes.length+1, createdAt: now, updatedAt: now };
+    state.notes.push(newNote);
+    closeNoteModal();
+    render();
+    if (!isDemoMode()){
+      apiPost({ action:'addNote', text })
+        .then(res => { if (res && res.id) newNote.id = res.id; })
+        .catch(err => { console.error(err); el('syncStatus').textContent = '同期エラー: ' + err.message; });
+    }
+  }
+});
+el('noteModalDelete').addEventListener('click', () => {
+  if (!editingNoteId) return;
+  if (!confirm('このメモを削除しますか？')) return;
+  const noteIdToDelete = editingNoteId;
+  state.notes = state.notes.filter(n => n.id !== noteIdToDelete);
+  closeNoteModal();
+  render();
+  if (!isDemoMode()){
+    apiPost({ action:'deleteNote', id: noteIdToDelete })
       .catch(err => { console.error(err); el('syncStatus').textContent = '同期エラー: ' + err.message; });
   }
 });
