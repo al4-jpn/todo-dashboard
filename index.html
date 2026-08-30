@@ -138,6 +138,7 @@
     white-space:pre-wrap;word-break:break-word;
   }
   .note-card:hover{border-color:#e0c968;}
+  .note-card a{color:#3b6fe0;text-decoration:underline;}
   .note-card-empty{
     background:transparent;border:1.5px dashed var(--border);color:var(--sub);
     display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:300;
@@ -148,6 +149,10 @@
   .note-modal{max-width:480px;}
   .note-modal textarea{width:100%;min-height:220px;padding:10px 11px;border:1px solid var(--border);
     border-radius:8px;font-size:15px;font-family:inherit;line-height:1.6;resize:vertical;}
+  .note-view{width:100%;min-height:220px;padding:10px 11px;border:1px solid var(--border);
+    border-radius:8px;font-size:15px;font-family:inherit;line-height:1.6;white-space:pre-wrap;
+    word-break:break-word;cursor:text;box-sizing:border-box;}
+  .note-view a{color:#3b6fe0;text-decoration:underline;cursor:pointer;}
 
   @media (max-width:760px){
     .top-row{flex-direction:column;}
@@ -501,6 +506,7 @@
   <div class="modal note-modal">
     <h3 id="noteModalTitle">メモを追加</h3>
     <div class="field">
+      <div id="noteViewDiv" class="note-view" style="display:none;"></div>
       <textarea id="noteTextInput" placeholder="メモを入力"></textarea>
     </div>
     <div class="modal-actions">
@@ -1383,6 +1389,19 @@ el('catModalDelete').addEventListener('click', () => {
 });
 
 // ---- メモ（Notion風ブロック） ----
+function linkify(text){
+  const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const urlRe = /(https?:\/\/[^\s<]+)/g;
+  return esc(text || '').replace(urlRe, (url) => {
+    // 末尾の句読点・括弧はリンクに含めない
+    let trail = '';
+    const m = url.match(/[)\].,、。」』!?！？]+$/);
+    if (m) { trail = m[0]; url = url.slice(0, -trail.length); }
+    if (!url) return trail;
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>${trail}`;
+  });
+}
+
 function renderNotes(){
   const grid = el('notesGrid');
   grid.innerHTML = '';
@@ -1391,8 +1410,11 @@ function renderNotes(){
   sorted.forEach(note => {
     const card = document.createElement('div');
     card.className = 'note-card';
-    card.textContent = note.text || '';
-    card.addEventListener('click', () => openNoteModal(note.id));
+    card.innerHTML = linkify(note.text || '');
+    card.addEventListener('click', (e) => {
+      if (e.target.tagName === 'A') return; // リンクはリンクとして反応させる
+      openNoteModal(note.id);
+    });
     grid.appendChild(card);
   });
 
@@ -1404,22 +1426,43 @@ function renderNotes(){
   grid.appendChild(addCard);
 }
 
+function switchNoteToEdit(){
+  el('noteViewDiv').style.display = 'none';
+  const textarea = el('noteTextInput');
+  textarea.style.display = 'block';
+  textarea.focus();
+}
+
 function openNoteModal(id){
   editingNoteId = id;
+  const viewDiv = el('noteViewDiv');
+  const textarea = el('noteTextInput');
   if (id){
     const note = state.notes.find(n => n.id === id);
+    const text = note ? note.text : '';
     el('noteModalTitle').textContent = 'メモを編集';
-    el('noteTextInput').value = note ? note.text : '';
+    textarea.value = text;
     el('noteModalDelete').style.display = 'inline-block';
+    // リンクをタップできるよう、まず表示モードを見せる
+    viewDiv.innerHTML = linkify(text);
+    viewDiv.style.display = 'block';
+    textarea.style.display = 'none';
   } else {
     el('noteModalTitle').textContent = 'メモを追加';
-    el('noteTextInput').value = '';
+    textarea.value = '';
     el('noteModalDelete').style.display = 'none';
+    viewDiv.style.display = 'none';
+    textarea.style.display = 'block';
   }
   el('noteModalOverlay').classList.add('show');
-  el('noteTextInput').focus();
+  if (textarea.style.display !== 'none') textarea.focus();
 }
 function closeNoteModal(){ el('noteModalOverlay').classList.remove('show'); }
+
+el('noteViewDiv').addEventListener('click', (e) => {
+  if (e.target.tagName === 'A') return; // リンクはリンクとして反応させる
+  switchNoteToEdit();
+});
 
 el('addNoteBtn').addEventListener('click', () => openNoteModal(null));
 el('noteModalCancel').addEventListener('click', closeNoteModal);
