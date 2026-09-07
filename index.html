@@ -795,7 +795,11 @@ function renderCategoryView(){
       items = items.filter(t => (t.tags||[]).some(tag => activeTagFilters.has(tag)));
     }
     if (!showDone) items = items.filter(t => !t.done);
-    items.sort((a,b)=>a.order-b.order);
+    items.sort((a,b) => {
+      const ad = a.dueDate || '9999-99-99', bd = b.dueDate || '9999-99-99';
+      if (ad !== bd) return ad < bd ? -1 : 1;
+      return (a.order||0) - (b.order||0);
+    });
 
     const catEl = document.createElement('div');
     catEl.className = 'category' + (collapsedCats.has(cat.id) ? ' collapsed' : '');
