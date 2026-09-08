@@ -547,6 +547,8 @@ let WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbx6RUnhQUYWkrplq7BOcyL
 const API_TOKEN = '91d772de2fafad9bf551e716c391bc78'; // Config シートの API_TOKEN と一致させる簡易認証トークン
 let state = { tasks: [], categories: [], notes: [] };
 let collapsedCats = new Set();
+let loadAllRetryCount = 0;
+let loadAllRetryTimer = null;
 let activeTagFilters = new Set();
 let showDone = false;
 let editingTaskId = null; // null = 新規, id = 編集
@@ -605,16 +607,60 @@ function seedDemoData(){
 }
 
 // ============ API通信 ============
-async function apiGet(action){
-  const res = await fetch(WEBAPP_URL + '?action=' + action + '&token=' + encodeURIComponent(API_TOKEN));
-  return res.json();
-}
-async function apiPost(payload){
-  const res = await fetch(WEBAPP_URL, { method:'POST', body: JSON.stringify(Object.assign({ token: API_TOKEN }, payload)) });
-  return res.json();
+// Apps Script側が一時的に 503 等を返すことがあるため、指数バックオフで自動リトライする。
+// レスポンスが取得できても JSON でない場合（GASの一時エラーページ等）も同様に扱う。
+async function fetchWithRetry(url, options, retries){
+  retries = (retries === undefined) ? 2 : retries; // 初回 + 最大2回リトライ = 計3回
+  const delays = [800, 2000]; // ms
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++){
+    try{
+      const res = await fetch(url, options);
+      if (!res.ok){
+        // 5xx系（GAS側の一時的な障害）はリトライ対象。4xx（認証エラー等）は即エラー。
+        const text = await res.text().catch(() => '');
+        const err = new Error(`HTTP ${res.status}${text ? ': ' + text.slice(0,200) : ''}`);
+        err.status = res.status;
+        if (res.status >= 500 && attempt < retries){
+          lastErr = err;
+          await new Promise(r => setTimeout(r, delays[attempt] || 2000));
+          continue;
+        }
+        throw err;
+      }
+      let data;
+      try{
+        data = await res.json();
+      }catch(parseErr){
+        // 200だがJSONでない＝GASの一時的な応答異常。リトライ対象。
+        if (attempt < retries){
+          lastErr = parseErr;
+          await new Promise(r => setTimeout(r, delays[attempt] || 2000));
+          continue;
+        }
+        throw new Error('サーバーから予期しない応答（JSON以外）');
+      }
+      return data;
+    }catch(err){
+      // fetch自体が失敗（ネットワーク/CORS等）した場合もリトライ
+      lastErr = err;
+      if (attempt < retries){
+        await new Promise(r => setTimeout(r, delays[attempt] || 2000));
+        continue;
+      }
+    }
+  }
+  throw lastErr || new Error('通信に失敗しました');
 }
 
-async function loadAll(){
+async function apiGet(action){
+  return fetchWithRetry(WEBAPP_URL + '?action=' + action + '&token=' + encodeURIComponent(API_TOKEN));
+}
+async function apiPost(payload){
+  return fetchWithRetry(WEBAPP_URL, { method:'POST', body: JSON.stringify(Object.assign({ token: API_TOKEN }, payload)) });
+}
+
+async function loadAll(isAutoRetry){
   if (isDemoMode()){
     el('configBanner').classList.add('show');
     if (state.categories.length === 0) seedDemoData();
@@ -623,7 +669,7 @@ async function loadAll(){
     return;
   }
   el('configBanner').classList.remove('show');
-  el('syncStatus').textContent = '読み込み中...';
+  if (!isAutoRetry) el('syncStatus').textContent = '読み込み中...';
   try{
     const data = await apiGet('getAll');
     if (data.error) throw new Error(data.error);
@@ -631,8 +677,19 @@ async function loadAll(){
     state.categories = data.categories;
     state.notes = data.notes || [];
     el('syncStatus').textContent = '同期済み ' + new Date().toLocaleTimeString('ja-JP');
+    loadAllRetryCount = 0;
   }catch(err){
-    el('syncStatus').textContent = '同期エラー: ' + err.message;
+    // fetchWithRetry内で数回リトライ済みでも失敗した場合、GAS側の一時的な障害の可能性があるため
+    // バックグラウンドでさらに間隔を空けて自動リトライする（手動での再デプロイに頼らないため）。
+    loadAllRetryCount = (loadAllRetryCount || 0) + 1;
+    if (loadAllRetryCount <= 4){
+      const waitSec = Math.min(60, loadAllRetryCount * 15);
+      el('syncStatus').textContent = `同期エラー: ${err.message}（${waitSec}秒後に自動再試行 ${loadAllRetryCount}/4）`;
+      clearTimeout(loadAllRetryTimer);
+      loadAllRetryTimer = setTimeout(() => loadAll(true), waitSec * 1000);
+    } else {
+      el('syncStatus').textContent = '同期エラー: ' + err.message + '（自動再試行を停止しました。更新ボタンでやり直せます）';
+    }
   }
   render();
   checkBrowserReminders();
