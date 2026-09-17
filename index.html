@@ -394,6 +394,7 @@
       <button class="btn-secondary" id="refreshBtn" style="margin-top:6px;">🔄 更新</button>
       <button class="btn-secondary" id="configBtn">⚙️ API設定</button>
       <button class="btn-secondary" id="notifyBtn" style="margin-top:6px;display:none;">🔔 通知を許可</button>
+      <button class="btn-secondary" id="authCheckBtn" style="margin-top:6px;display:none;background:#fde68a;border-color:#f5c451;">🔑 認証を確認する</button>
     </div>
   </header>
 
@@ -678,17 +679,23 @@ async function loadAll(isAutoRetry){
     state.notes = data.notes || [];
     el('syncStatus').textContent = '同期済み ' + new Date().toLocaleTimeString('ja-JP');
     loadAllRetryCount = 0;
+    el('authCheckBtn').style.display = 'none';
   }catch(err){
     // fetchWithRetry内で数回リトライ済みでも失敗した場合、GAS側の一時的な障害の可能性があるため
     // バックグラウンドでさらに間隔を空けて自動リトライする（手動での再デプロイに頼らないため）。
+    // なお fetch/XHR は CORS 経由の失敗理由（GASの一時障害／未検証アプリの認証切れ等）を
+    // JS側から区別できないため、失敗時は常に「認証を確認する」ボタンを表示しておく。
+    // このボタンは exec URL をブラウザの直接ナビゲーション（新しいタブ）で開くだけなので、
+    // 認証切れが原因であればGoogleの認証画面がそのまま表示され、その場で再承認できる。
     loadAllRetryCount = (loadAllRetryCount || 0) + 1;
+    el('authCheckBtn').style.display = 'inline-block';
     if (loadAllRetryCount <= 4){
       const waitSec = Math.min(60, loadAllRetryCount * 15);
       el('syncStatus').textContent = `同期エラー: ${err.message}（${waitSec}秒後に自動再試行 ${loadAllRetryCount}/4）`;
       clearTimeout(loadAllRetryTimer);
       loadAllRetryTimer = setTimeout(() => loadAll(true), waitSec * 1000);
     } else {
-      el('syncStatus').textContent = '同期エラー: ' + err.message + '（自動再試行を停止しました。更新ボタンでやり直せます）';
+      el('syncStatus').textContent = '同期エラー: ' + err.message + '（自動再試行を停止しました。認証切れの場合は「🔑 認証を確認する」を押してください）';
     }
   }
   render();
@@ -1628,6 +1635,13 @@ el('showDoneBtn').addEventListener('click', () => {
 
 // ---- 更新・設定 ----
 el('refreshBtn').addEventListener('click', loadAll);
+el('authCheckBtn').addEventListener('click', () => {
+  // fetch/XHR は認証切れでも CORS エラーとしてしか見えないため、
+  // 実際に認証が必要かどうかは exec URL への直接アクセス（トップレベルナビゲーション）でしか判別できない。
+  // 認証切れであればここでGoogleの「Authorization needed」画面が出るので、そのまま許可すれば直る。
+  const url = WEBAPP_URL + '?action=getAll&token=' + encodeURIComponent(API_TOKEN);
+  window.open(url, '_blank');
+});
 el('configBtn').addEventListener('click', () => {
   el('webappUrlInput').value = WEBAPP_URL;
   el('configModalOverlay').classList.add('show');
